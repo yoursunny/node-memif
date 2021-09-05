@@ -1,20 +1,33 @@
 {
-    "main": "lib/binding.js",
-    "dependencies": {
-        "node-addon-api": "^1.1.0"
-    },
-    "scripts": {
-        "pretest": "tsc",
-        "test": "node --napi-modules ./test/test_binding.js"
-    },
-    "gypfile": true,
-    "name": "memif",
-    "version": "1.0.0",
-    "author": "",
-    "license": "ISC",
-    "description": "",
-    "devDependencies": {
-        "@types/node": "^7.0.22",
-        "typescript": "^2.3.3"
-    }
+  "private": true,
+  "name": "memif",
+  "version": "0.0.0",
+  "main": "dist/memif.js",
+  "types": "dist/memif.d.ts",
+  "gypfile": true,
+  "scripts": {
+    "build": "tsc",
+    "clang-format": "git ls-files '*.cc' | xargs clang-format-11 -i -style=file",
+    "lint": "xo --fix",
+    "test": "node ./test/main.js",
+    "typecheck": "tsc --checkJs --noEmit ./test/*.js"
+  },
+  "files": [
+    "build/Release/memif-native.node",
+    "binding.gyp",
+    "dist",
+    "src"
+  ],
+  "dependencies": {
+    "node-addon-api": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^16.7.10",
+    "@types/tmp": "^0.2.1",
+    "@yoursunny/xo-config": "^0.44.0",
+    "execa": "^5.1.1",
+    "p-event": "^4.2.0",
+    "tmp": "^0.2.1",
+    "typescript": "^4.4.2"
+  }
 }

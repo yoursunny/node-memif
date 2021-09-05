@@ -1,3 +1,6 @@
+/*.out
+/*.tgz
+/.vscode
 /build
 /dist
 /node_modules
