@@ -4,7 +4,6 @@
   "version": "0.0.0",
   "main": "dist/memif.js",
   "types": "dist/memif.d.ts",
-  "gypfile": true,
   "scripts": {
     "build": "tsc",
     "clang-format": "git ls-files '*.cc' | xargs clang-format-11 -i -style=file",
@@ -13,11 +12,13 @@
     "typecheck": "tsc --checkJs --noEmit ./test/*.js"
   },
   "files": [
-    "build/Release/memif-native.node",
     "binding.gyp",
     "dist",
     "src"
   ],
+  "gypfile": true,
+  "os": ["linux"],
+  "cpu": ["x64"],
   "dependencies": {
     "node-addon-api": "^4.1.0"
   },

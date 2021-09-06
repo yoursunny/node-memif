@@ -1,15 +1,14 @@
+import * as fs from "fs";
 import * as path from "path";
 import { Duplex } from "stream";
 
-// @ts-expect-error native module
-import addon = require("../build/Release/memif-native");
-
-interface AddonMemif {
+interface NativeMemif {
+  readonly counters: Memif.Counters;
   send: (b: Uint8Array) => void;
   close: () => void;
 }
 
-interface AddonMemifOptions {
+interface NativeMemifOptions {
   socketName: string;
   id: number;
   dataroom: number;
@@ -19,9 +18,29 @@ interface AddonMemifOptions {
   state: (up: boolean) => void;
 }
 
-type AddonMemifConstructor = new(opts: AddonMemifOptions) => AddonMemif;
+type NativeMemifConstructor = new(opts: NativeMemifOptions) => NativeMemif;
 
-const AddonMemif = addon.Memif as AddonMemifConstructor;
+function newNativeMemif(opts: NativeMemifOptions): NativeMemif {
+  let addon: { Memif: NativeMemifConstructor };
+  try {
+    addon = require("../build/Release/memif-native");
+  } catch (err: unknown) {
+    let suggest = "(no specific suggestion)";
+    switch (true) {
+      case process.platform !== "linux" || process.arch !== "x64":
+        suggest = `os=${process.platform} cpu=${process.arch} are not supported`;
+        break;
+      case !fs.existsSync("/usr/local/lib/libmemif.so"):
+        suggest = "/usr/local/lib/libmemif.so does not exist, reinstall libmemif";
+        break;
+      case !fs.existsSync("../build/Release/memif-native.node"):
+        suggest = "memif-native.node does not exist, reinstall node-memif";
+        break;
+    }
+    throw new Error(`cannot load memif C++ addon: ${suggest}\n${err}`);
+  }
+  return new addon.Memif(opts);
+}
 
 const activeSocketNames = new Set<string>();
 
@@ -55,7 +74,7 @@ export class Memif extends Duplex {
       throw new RangeError("ringSize out of range");
     }
 
-    this.native = new AddonMemif({
+    this.native = newNativeMemif({
       socketName,
       id,
       dataroom,
@@ -69,6 +88,10 @@ export class Memif extends Duplex {
 
   public get connected(): boolean {
     return this.connected_;
+  }
+
+  public get counters(): Memif.Counters {
+    return this.native.counters;
   }
 
   override _read(size: number): void {
@@ -93,8 +116,10 @@ export class Memif extends Duplex {
     try {
       this.native.send(u8);
     } catch (err: unknown) {
-      callback(err as Error | undefined);
+      callback(err as Error);
+      return;
     }
+    callback();
   }
 
   override _destroy(error: Error | null, callback: (error: Error | null) => void): void {
@@ -103,7 +128,7 @@ export class Memif extends Duplex {
     callback(error);
   }
 
-  private readonly native: AddonMemif;
+  private readonly native: NativeMemif;
   private readonly socketName: string;
   private connected_ = false;
 
@@ -126,5 +151,12 @@ export namespace Memif {
     dataroom?: number;
     ringSize?: number;
     role?: Role;
+  }
+
+  export interface Counters {
+    nRxDelivered: bigint;
+    nRxDropped: bigint;
+    nTxDelivered: bigint;
+    nTxDropped: bigint;
   }
 }

@@ -48,6 +48,7 @@ public:
   {
     auto func = DefineClass(env, "Memif",
                             {
+                              InstanceAccessor("counters", &Memif::counters, nullptr),
                               InstanceMethod<&Memif::send>("send"),
                               InstanceMethod<&Memif::close>("close"),
                             });
@@ -122,11 +123,25 @@ public:
   }
 
 private:
+  Napi::Value counters(const Napi::CallbackInfo& info)
+  {
+    auto env = info.Env();
+    auto cnt = Napi::Object::New(env);
+    cnt.Set("nRxDelivered",
+            Napi::BigInt::New(env, m_nRxDeliveredAtomic.load(std::memory_order_relaxed)));
+    cnt.Set("nRxDropped",
+            Napi::BigInt::New(env, m_nRxDroppedAtomic.load(std::memory_order_relaxed)));
+    cnt.Set("nTxDelivered", Napi::BigInt::New(env, m_nTxDelivered));
+    cnt.Set("nTxDropped", Napi::BigInt::New(env, m_nTxDropped));
+    return cnt;
+  }
+
   void send(const Napi::CallbackInfo& info)
   {
     auto env = info.Env();
     if (!m_connected) {
-      NAPI_THROW_VOID(Napi::Error::New(env, "disconnected"));
+      ++m_nTxDropped;
+      return;
     }
 
     auto u8 = info[0].As<Napi::Uint8Array>();
@@ -136,15 +151,19 @@ private:
     uint16_t nAlloc = 0;
     int err = memif_buffer_alloc(m_conn, 0, &b, 1, &nAlloc, len);
     if (err != MEMIF_ERR_SUCCESS) {
-      NAPI_THROW_VOID(Napi::Error::New(env, "memif_buffer_alloc error " + std::to_string(err)));
+      ++m_nTxDropped;
+      return;
     }
     std::copy_n(u8.Data(), len, reinterpret_cast<uint8_t*>(b.data));
 
     uint16_t nTx = 0;
     err = memif_tx_burst(m_conn, 0, &b, 1, &nTx);
     if (err != MEMIF_ERR_SUCCESS) {
-      NAPI_THROW_VOID(Napi::Error::New(env, "memif_tx_burst error " + std::to_string(err)));
+      ++m_nTxDropped;
+      return;
     }
+
+    ++m_nTxDelivered;
   }
 
   void close(const Napi::CallbackInfo& info)
@@ -177,7 +196,10 @@ private:
       uint8_t* copy = new uint8_t[sizeof(uint32_t) + b.len];
       *reinterpret_cast<uint32_t*>(copy) = b.len;
       std::copy_n(reinterpret_cast<const uint8_t*>(b.data), b.len, &copy[sizeof(uint32_t)]);
-      if (self->m_rx.NonBlockingCall(copy) != napi_ok) {
+      if (self->m_rx.NonBlockingCall(copy) == napi_ok) {
+        self->m_nRxDeliveredAtomic.store(++self->m_nRxDelivered, std::memory_order_relaxed);
+      } else {
+        self->m_nRxDroppedAtomic.store(++self->m_nRxDropped, std::memory_order_relaxed);
         delete[] copy;
       }
     }
@@ -223,9 +245,15 @@ private:
   std::thread m_th;
   std::atomic_bool m_running{ false };
   std::atomic_bool m_connected{ false };
+  std::atomic_uint64_t m_nRxDeliveredAtomic{ 0 };
+  std::atomic_uint64_t m_nRxDroppedAtomic{ 0 };
 
   memif_socket_handle_t m_sock = nullptr;
   memif_conn_handle_t m_conn = nullptr;
+  uint64_t m_nRxDelivered = 0;
+  uint64_t m_nRxDropped = 0;
+  uint64_t m_nTxDelivered = 0;
+  uint64_t m_nTxDropped = 0;
 };
 
 Napi::Object
