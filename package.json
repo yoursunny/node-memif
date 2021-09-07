@@ -1,9 +1,28 @@
 {
-  "private": true,
   "name": "memif",
-  "version": "0.0.0",
+  "version": "0.0.20210907",
+  "description": "Shared Memory Packet Interface (memif)",
+  "author": "Junxiao Shi <npm@mail1.yoursunny.com>",
+  "license": "ISC",
+  "keywords": [
+    "memif",
+    "libmemif",
+    "vpp",
+    "dpdk",
+    "packet"
+  ],
+  "files": [
+    "binding.gyp",
+    "dist",
+    "src"
+  ],
+  "type": "commonjs",
   "main": "dist/memif.js",
   "types": "dist/memif.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yoursunny/node-memif.git"
+  },
   "scripts": {
     "build": "tsc",
     "clang-format": "git ls-files '*.cc' | xargs clang-format-11 -i -style=file",
@@ -11,11 +30,6 @@
     "test": "node ./test/main.js",
     "typecheck": "tsc --checkJs --noEmit ./test/*.js"
   },
-  "files": [
-    "binding.gyp",
-    "dist",
-    "src"
-  ],
   "gypfile": true,
   "os": ["linux"],
   "cpu": ["x64"],
