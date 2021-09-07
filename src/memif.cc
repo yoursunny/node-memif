@@ -77,7 +77,7 @@ public:
     auto socketName = args.Get("socketName").As<Napi::String>().Utf8Value();
     auto id = args.Get("id").As<Napi::Number>().Uint32Value();
     auto dataroom = args.Get("dataroom").As<Napi::Number>().Uint32Value();
-    auto ringSizeLog2 = args.Get("ringSizeLog2").As<Napi::Number>().Uint32Value();
+    auto ringCapacityLog2 = args.Get("ringCapacityLog2").As<Napi::Number>().Uint32Value();
     auto isServer = args.Get("isServer").As<Napi::Boolean>().Value();
     auto rx = args.Get("rx").As<Napi::Function>();
     auto state = args.Get("state").As<Napi::Function>();
@@ -94,7 +94,7 @@ public:
     cargs.socket = m_sock;
     cargs.interface_id = id;
     cargs.buffer_size = static_cast<uint16_t>(dataroom);
-    cargs.log2_ring_size = static_cast<uint8_t>(ringSizeLog2);
+    cargs.log2_ring_size = static_cast<uint8_t>(ringCapacityLog2);
     cargs.is_master = static_cast<uint8_t>(isServer);
     err = memif_create(&m_conn, &cargs, handleConnect, handleDisconnect, handleInterrupt, this);
     if (err != MEMIF_ERR_SUCCESS) {
@@ -210,7 +210,7 @@ private:
   void loop()
   {
     while (m_running) {
-      memif_poll_event(0);
+      memif_poll_event(1);
     }
   }
 

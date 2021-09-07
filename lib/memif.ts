@@ -12,7 +12,7 @@ interface NativeMemifOptions {
   socketName: string;
   id: number;
   dataroom: number;
-  ringSizeLog2: number;
+  ringCapacityLog2: number;
   isServer: boolean;
   rx: (b: Uint8Array) => void;
   state: (up: boolean) => void;
@@ -44,12 +44,19 @@ function newNativeMemif(opts: NativeMemifOptions): NativeMemif {
 
 const activeSocketNames = new Set<string>();
 
+/**
+ * Shared Memory Packet Interface (memif).
+ *
+ * This class wraps libmemif as a Duplex stream in object mode.
+ * Received packets can be read from the stream as Uint8Array.
+ * To transmit a packet, write a ArrayBufferView or ArrayBuffer to the stream.
+ */
 export class Memif extends Duplex {
   constructor({
     socketName,
     id = 0,
     dataroom = 2048,
-    ringSize = 1024,
+    ringCapacity = 1024,
     role = "client",
   }: Memif.Options) {
     super({
@@ -66,19 +73,19 @@ export class Memif extends Duplex {
       throw new RangeError("id out of range");
     }
     dataroom = 2 ** Math.ceil(Math.log2(dataroom));
-    if (!(dataroom >= 64 && dataroom <= 0xFFFF)) {
+    if (!(dataroom >= 512 && dataroom <= 0xFFFF)) {
       throw new RangeError("dataroom out of range");
     }
-    const ringSizeLog2 = Math.ceil(Math.log2(ringSize));
-    if (!(ringSizeLog2 >= 4 && ringSizeLog2 <= 15)) {
-      throw new RangeError("ringSize out of range");
+    const ringCapacityLog2 = Math.ceil(Math.log2(ringCapacity));
+    if (!(ringCapacityLog2 >= 4 && ringCapacityLog2 <= 15)) {
+      throw new RangeError("ringCapacity out of range");
     }
 
     this.native = newNativeMemif({
       socketName,
       id,
       dataroom,
-      ringSizeLog2,
+      ringCapacityLog2,
       isServer: role === "server",
       rx: this.handleRx,
       state: this.handleState,
@@ -86,10 +93,15 @@ export class Memif extends Duplex {
     activeSocketNames.add(socketName);
   }
 
+  /**
+   * Determine whether memif is connected to the peer.
+   * You may listen for "up" and "down" events to get updates on connectivity change.
+   */
   public get connected(): boolean {
     return this.connected_;
   }
 
+  /** Retrieve counters of incoming and outgoing packets. */
   public get counters(): Memif.Counters {
     return this.native.counters;
   }
@@ -146,11 +158,29 @@ export namespace Memif {
   export type Role = "client" | "server";
 
   export interface Options {
-    socketName: string;
-    id?: number;
-    dataroom?: number;
-    ringSize?: number;
+    /** Control socket role. */
     role?: Role;
+
+    /** Control socket filename. */
+    socketName: string;
+
+    /**
+     * Interface ID.
+     * This must be between 0 and 0xFFFFFFFF. Default is 0.
+     */
+    id?: number;
+
+    /**
+     * Packet buffer size, automatically adjusted to next power of 2.
+     * This must be between 512 and 32768. Default is 2048.
+     */
+    dataroom?: number;
+
+    /**
+     * Ring capacity, automatically adjusted to next power of 2.
+     * This must be between 16 and 32768. Default is 1024.
+     */
+    ringCapacity?: number;
   }
 
   export interface Counters {
