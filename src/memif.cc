@@ -138,7 +138,6 @@ private:
 
   void send(const Napi::CallbackInfo& info)
   {
-    auto env = info.Env();
     if (!m_connected) {
       ++m_nTxDropped;
       return;

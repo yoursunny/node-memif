@@ -33,7 +33,7 @@ function newNativeMemif(opts: NativeMemifOptions): NativeMemif {
       case !fs.existsSync("/usr/local/lib/libmemif.so"):
         suggest = "/usr/local/lib/libmemif.so does not exist, reinstall libmemif";
         break;
-      case !fs.existsSync("../build/Release/memif-native.node"):
+      case !fs.existsSync(path.resolve(__dirname, "../build/Release/memif-native.node")):
         suggest = "memif-native.node does not exist, reinstall node-memif";
         break;
     }
