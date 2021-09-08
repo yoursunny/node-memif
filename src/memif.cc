@@ -258,7 +258,6 @@ private:
   std::atomic_uint64_t m_nRxDroppedAtomic{ 0 };
 
   memif_socket_handle_t m_sock = nullptr;
-  memif_socket_handle_t m_sock2 = nullptr;
   memif_conn_handle_t m_conn = nullptr;
   uint64_t m_nRxDelivered = 0;
   uint64_t m_nRxDropped = 0;

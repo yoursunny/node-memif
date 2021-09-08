@@ -1,6 +1,6 @@
 {
   "name": "memif",
-  "version": "0.0.20210907",
+  "version": "0.0.20210908",
   "description": "Shared Memory Packet Interface (memif)",
   "author": "Junxiao Shi <npm@mail1.yoursunny.com>",
   "license": "ISC",
@@ -9,7 +9,8 @@
     "libmemif",
     "vpp",
     "dpdk",
-    "packet"
+    "node-api",
+    "n-api"
   ],
   "files": [
     "binding.gyp",
