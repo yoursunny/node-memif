@@ -21,7 +21,7 @@ const helper = execa.node(path.resolve(__dirname, "server.js"), [socketName], {
 (async () => {
 const memif = new Memif({ socketName });
 assert(!memif.connected);
-await pEvent(memif, "up");
+await pEvent(memif, "memif:up");
 assert(memif.connected);
 
 const c2s = crypto.randomBytes(1024);
@@ -40,7 +40,7 @@ assert(s2c.equals(s2cR));
 assert(memif.connected);
 helper.disconnect();
 await Promise.all([
-  pEvent(memif, "down"),
+  pEvent(memif, "memif:down"),
   pEvent(helper, "exit"),
 ]);
 assert(!memif.connected);

@@ -42,7 +42,7 @@ function newNativeMemif(opts: NativeMemifOptions): NativeMemif {
   return new addon.Memif(opts);
 }
 
-const activeSocketNames = new Set<string>();
+let isActive = false;
 
 /**
  * Shared Memory Packet Interface (memif).
@@ -53,31 +53,31 @@ const activeSocketNames = new Set<string>();
  */
 export class Memif extends Duplex {
   constructor({
+    role = "client",
     socketName,
     id = 0,
     dataroom = 2048,
     ringCapacity = 1024,
-    role = "client",
   }: Memif.Options) {
     super({
       allowHalfOpen: false,
       objectMode: true,
     });
 
-    socketName = path.resolve(socketName);
-    if (activeSocketNames.has(socketName)) {
-      throw new Error("socketName is in use");
+    if (isActive) {
+      throw new Error("only one active Memif instance is allowed");
     }
-    this.socketName = socketName;
+
+    socketName = path.resolve(socketName);
     if (!(Number.isInteger(id) && id >= 0 && id <= 0xFFFFFFFF)) {
       throw new RangeError("id out of range");
     }
     dataroom = 2 ** Math.ceil(Math.log2(dataroom));
-    if (!(dataroom >= 512 && dataroom <= 0xFFFF)) {
+    if (!(dataroom >= 64 && dataroom <= 0xFFFF)) {
       throw new RangeError("dataroom out of range");
     }
     const ringCapacityLog2 = Math.ceil(Math.log2(ringCapacity));
-    if (!(ringCapacityLog2 >= 4 && ringCapacityLog2 <= 15)) {
+    if (!(ringCapacityLog2 >= 4 && ringCapacityLog2 <= 14)) {
       throw new RangeError("ringCapacity out of range");
     }
 
@@ -90,12 +90,12 @@ export class Memif extends Duplex {
       rx: this.handleRx,
       state: this.handleState,
     });
-    activeSocketNames.add(socketName);
+    isActive = true;
   }
 
   /**
    * Determine whether memif is connected to the peer.
-   * You may listen for "up" and "down" events to get updates on connectivity change.
+   * You may listen for "memif:up" and "memif:down" events to get updates on connectivity change.
    */
   public get connected(): boolean {
     return this.connected_;
@@ -136,12 +136,11 @@ export class Memif extends Duplex {
 
   override _destroy(error: Error | null, callback: (error: Error | null) => void): void {
     this.native.close();
-    activeSocketNames.delete(this.socketName);
+    isActive = false;
     callback(error);
   }
 
   private readonly native: NativeMemif;
-  private readonly socketName: string;
   private connected_ = false;
 
   private readonly handleRx = (b: Uint8Array) => {
@@ -150,7 +149,7 @@ export class Memif extends Duplex {
 
   private readonly handleState = (up: boolean) => {
     this.connected_ = up;
-    this.emit(up ? "up" : "down");
+    this.emit(up ? "memif:up" : "memif:down");
   };
 }
 
@@ -172,13 +171,13 @@ export namespace Memif {
 
     /**
      * Packet buffer size, automatically adjusted to next power of 2.
-     * This must be between 512 and 32768. Default is 2048.
+     * This must be between 64 and 32768. Default is 2048.
      */
     dataroom?: number;
 
     /**
      * Ring capacity, automatically adjusted to next power of 2.
-     * This must be between 16 and 32768. Default is 1024.
+     * This must be between 16 and 16384. Default is 1024.
      */
     ringCapacity?: number;
   }

@@ -54,24 +54,16 @@ public:
                             });
     auto ctor = new Napi::FunctionReference();
     *ctor = Napi::Persistent(func);
-    exports.Set("Memif", func);
     env.SetInstanceData(ctor);
+
+    exports.Set("Memif", func);
     return exports;
   }
 
   explicit Memif(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<Memif>(info)
   {
-    static std::once_flag initOnce;
-    static int initErr = -1;
-    std::call_once(initOnce, [&] {
-      initErr = memif_init(nullptr, const_cast<char*>("node-memif"), nullptr, nullptr, nullptr);
-    });
-
     auto env = info.Env();
-    if (initErr != MEMIF_ERR_SUCCESS) {
-      NAPI_THROW_VOID(Napi::Error::New(env, "memif_init error " + std::to_string(initErr)));
-    }
 
     auto args = info[0].ToObject();
     auto socketName = args.Get("socketName").As<Napi::String>().Utf8Value();
@@ -85,9 +77,17 @@ public:
       return;
     }
 
-    int err = memif_create_socket(&m_sock, socketName.data(), nullptr);
+    int err = memif_init(nullptr, const_cast<char*>("node-memif"), nullptr, nullptr, nullptr);
     if (err != MEMIF_ERR_SUCCESS) {
-      NAPI_THROW_VOID(Napi::Error::New(env, "memif_create_socket error " + std::to_string(err)));
+      NAPI_THROW_VOID(Napi::Error::New(env, "memif_init error " + std::to_string(err)));
+    }
+    m_init = true;
+
+    err = memif_create_socket(&m_sock, socketName.data(), this);
+    if (err != MEMIF_ERR_SUCCESS) {
+      stop();
+      NAPI_THROW_VOID(
+        Napi::Error::New(env, "memif_per_thread_create_socket error " + std::to_string(err)));
     }
 
     memif_conn_args_t cargs{};
@@ -98,7 +98,7 @@ public:
     cargs.is_master = static_cast<uint8_t>(isServer);
     err = memif_create(&m_conn, &cargs, handleConnect, handleDisconnect, handleInterrupt, this);
     if (err != MEMIF_ERR_SUCCESS) {
-      memif_delete_socket(&m_sock);
+      stop();
       NAPI_THROW_VOID(Napi::Error::New(env, "memif_create error " + std::to_string(err)));
     }
 
@@ -208,8 +208,11 @@ private:
 
   void loop()
   {
-    while (m_running) {
-      memif_poll_event(1);
+    while (true) {
+      int err = memif_poll_event(-1);
+      if (err == MEMIF_ERR_POLL_CANCEL || err == MEMIF_ERR_DISCONNECTED) {
+        break;
+      }
     }
   }
 
@@ -223,7 +226,9 @@ private:
 
   void stop()
   {
-    if (m_running.exchange(false)) {
+    if (m_running) {
+      m_running = false;
+      memif_cancel_poll_event();
       m_th.join();
       setState(false);
       m_rx.Release();
@@ -236,18 +241,24 @@ private:
     if (m_sock != nullptr) {
       memif_delete_socket(&m_sock);
     }
+    if (m_init) {
+      memif_cleanup();
+      m_init = false;
+    }
   }
 
 private:
   BufferCallback m_rx;
   BooleanCallback m_state;
   std::thread m_th;
-  std::atomic_bool m_running{ false };
+  bool m_init = false;
+  bool m_running = false;
   std::atomic_bool m_connected{ false };
   std::atomic_uint64_t m_nRxDeliveredAtomic{ 0 };
   std::atomic_uint64_t m_nRxDroppedAtomic{ 0 };
 
   memif_socket_handle_t m_sock = nullptr;
+  memif_socket_handle_t m_sock2 = nullptr;
   memif_conn_handle_t m_conn = nullptr;
   uint64_t m_nRxDelivered = 0;
   uint64_t m_nRxDropped = 0;

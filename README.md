@@ -32,7 +32,4 @@ memif.close();
 
 ## Limitations
 
-Only one `Memif` instance may be created for each distinct `socketName`.
-
-Currently, `memif.close()` may get stuck if there have been multiple active `Memif` instances in a Node.js process.
-Therefore, it's recommended to limit yourself to only one `Memif` instance at a time.
+Only one `Memif` instance is allowed in each Node.js process.
