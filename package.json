@@ -8,9 +8,7 @@
     "memif",
     "libmemif",
     "vpp",
-    "dpdk",
-    "node-api",
-    "n-api"
+    "dpdk"
   ],
   "files": [
     "binding.gyp",

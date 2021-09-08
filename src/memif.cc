@@ -7,39 +7,17 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
+#include <vector>
+
+#include <unistd.h>
 
 #include <napi.h>
+#include <uv.h>
 extern "C"
 {
 #include <libmemif.h>
 }
-
-static void
-bufferFinalize(Napi::Env env, void* value32)
-{
-  auto* value = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(value32) - sizeof(uint32_t));
-  delete[] value;
-}
-
-static void
-bufferCallback(Napi::Env env, Napi::Function fn, std::nullptr_t* ctx, uint8_t* value)
-{
-  auto ab = Napi::ArrayBuffer::New(env, &value[sizeof(uint32_t)],
-                                   *reinterpret_cast<const uint32_t*>(value), bufferFinalize);
-  auto u8 = Napi::Uint8Array::New(env, ab.ByteLength(), ab, 0);
-  fn.Call({ u8 });
-}
-
-using BufferCallback = Napi::TypedThreadSafeFunction<std::nullptr_t, uint8_t, bufferCallback>;
-
-static void
-booleanCallback(Napi::Env env, Napi::Function fn, std::nullptr_t* ctx, void* b0)
-{
-  auto b = Napi::Boolean::New(env, reinterpret_cast<uintptr_t>(b0) != 0);
-  fn.Call({ b });
-}
-
-using BooleanCallback = Napi::TypedThreadSafeFunction<std::nullptr_t, void, booleanCallback>;
 
 class Memif : public Napi::ObjectWrap<Memif>
 {
@@ -77,11 +55,16 @@ public:
       return;
     }
 
-    int err = memif_init(nullptr, const_cast<char*>("node-memif"), nullptr, nullptr, nullptr);
+    if (s_instance != nullptr) {
+      Napi::Error::Fatal(__FILE__, "cannot create multiple Memif instances");
+    }
+    s_instance = this;
+    int err =
+      memif_init(handleControlFdUpdate, const_cast<char*>("node-memif"), nullptr, nullptr, nullptr);
     if (err != MEMIF_ERR_SUCCESS) {
+      s_instance = nullptr;
       NAPI_THROW_VOID(Napi::Error::New(env, "memif_init error " + std::to_string(err)));
     }
-    m_init = true;
 
     err = memif_create_socket(&m_sock, socketName.data(), this);
     if (err != MEMIF_ERR_SUCCESS) {
@@ -102,11 +85,10 @@ public:
       NAPI_THROW_VOID(Napi::Error::New(env, "memif_create error " + std::to_string(err)));
     }
 
-    m_rx = BufferCallback::New(env, rx, "rx", 1024, 1, nullptr);
-    m_state = BooleanCallback::New(env, state, "state", 1, 1, nullptr);
-
+    m_rx = Napi::Persistent(rx);
+    m_state = Napi::Persistent(state);
     m_running = true;
-    m_th = std::thread([this] { loop(); });
+    s_instance = this;
   }
 
   static Napi::Value CreateNewItem(const Napi::CallbackInfo& info)
@@ -127,10 +109,8 @@ private:
   {
     auto env = info.Env();
     auto cnt = Napi::Object::New(env);
-    cnt.Set("nRxDelivered",
-            Napi::BigInt::New(env, m_nRxDeliveredAtomic.load(std::memory_order_relaxed)));
-    cnt.Set("nRxDropped",
-            Napi::BigInt::New(env, m_nRxDroppedAtomic.load(std::memory_order_relaxed)));
+    cnt.Set("nRxDelivered", Napi::BigInt::New(env, m_nRxDelivered));
+    cnt.Set("nRxDropped", Napi::BigInt::New(env, m_nRxDropped));
     cnt.Set("nTxDelivered", Napi::BigInt::New(env, m_nTxDelivered));
     cnt.Set("nTxDropped", Napi::BigInt::New(env, m_nTxDropped));
     return cnt;
@@ -170,6 +150,51 @@ private:
     stop();
   }
 
+  static int handleControlFdUpdate(int fd, uint8_t events, void*)
+  {
+    auto self = s_instance;
+    if ((events & MEMIF_FD_EVENT_DEL) != 0) {
+      self->m_uvPolls.erase(fd);
+      return 0;
+    }
+
+    int uvEvents = 0;
+    if ((events & MEMIF_FD_EVENT_READ) != 0) {
+      uvEvents |= UV_READABLE;
+    }
+    if ((events & MEMIF_FD_EVENT_WRITE) != 0) {
+      uvEvents |= UV_WRITABLE;
+    }
+    if (uvEvents == 0) {
+      return 0;
+    }
+
+    auto& ptr = self->m_uvPolls[fd];
+    if (ptr == nullptr) {
+      ptr.reset(new UvPoll(self, fd));
+    }
+    return uv_poll_start(&ptr->handle, uvEvents, handlePoll);
+  }
+
+  static void handlePoll(uv_poll_t* handle, int status, int events)
+  {
+    UvPoll& poll = UvPoll::of(handle);
+    uint8_t memifEvents = 0;
+    if (status < 0) {
+      memifEvents = MEMIF_FD_EVENT_ERROR;
+    } else {
+      if ((events & UV_READABLE) != 0) {
+        memifEvents |= MEMIF_FD_EVENT_READ;
+      }
+      if ((events & UV_WRITABLE) != 0) {
+        memifEvents |= MEMIF_FD_EVENT_WRITE;
+      }
+    }
+
+    Napi::HandleScope scope(poll.owner->Env());
+    memif_control_fd_handler(poll.fd, memifEvents);
+  }
+
   static int handleConnect(memif_conn_handle_t conn, void* self0)
   {
     auto self = reinterpret_cast<Memif*>(self0);
@@ -192,78 +217,103 @@ private:
     uint16_t nRx = 0;
     int err = memif_rx_burst(conn, 0, &b, 1, &nRx);
     if (err == MEMIF_ERR_SUCCESS && nRx == 1) {
-      uint8_t* copy = new uint8_t[sizeof(uint32_t) + b.len];
-      *reinterpret_cast<uint32_t*>(copy) = b.len;
-      std::copy_n(reinterpret_cast<const uint8_t*>(b.data), b.len, &copy[sizeof(uint32_t)]);
-      if (self->m_rx.NonBlockingCall(copy) == napi_ok) {
-        self->m_nRxDeliveredAtomic.store(++self->m_nRxDelivered, std::memory_order_relaxed);
-      } else {
-        self->m_nRxDroppedAtomic.store(++self->m_nRxDropped, std::memory_order_relaxed);
-        delete[] copy;
-      }
+      auto u8 = Napi::Uint8Array::New(self->Env(), b.len);
+      std::memcpy(u8.Data(), b.data, b.len);
+      self->m_rx.Call({ u8 });
+      ++self->m_nRxDelivered;
     }
     memif_refill_queue(conn, 0, nRx, 0);
     return 0;
   }
 
-  void loop()
-  {
-    while (true) {
-      int err = memif_poll_event(-1);
-      if (err == MEMIF_ERR_POLL_CANCEL || err == MEMIF_ERR_DISCONNECTED) {
-        break;
-      }
-    }
-  }
-
   void setState(bool up)
   {
-    if (m_connected.exchange(up) == up) {
+    if (m_connected == up) {
       return;
     }
-    m_state.BlockingCall(reinterpret_cast<void*>(static_cast<uintptr_t>(up)));
+    m_connected = up;
+    m_state.Call({ Napi::Boolean::New(Env(), up) });
   }
 
   void stop()
   {
     if (m_running) {
       m_running = false;
-      memif_cancel_poll_event();
-      m_th.join();
+      // memif_cancel_poll_event();
       setState(false);
-      m_rx.Release();
-      m_state.Release();
+      m_rx.Unref();
+      m_state.Unref();
     }
 
     if (m_conn != nullptr) {
       memif_delete(&m_conn);
     }
+
     if (m_sock != nullptr) {
       memif_delete_socket(&m_sock);
     }
-    if (m_init) {
+
+    if (s_instance == this) {
       memif_cleanup();
-      m_init = false;
+
+      std::vector<int> fds;
+      for (const auto& entry : m_uvPolls) {
+        fds.push_back(entry.second->fd);
+      }
+      m_uvPolls.clear();
+      for (int fd : fds) {
+        ::close(fd);
+      }
+
+      s_instance = nullptr;
     }
   }
 
 private:
-  BufferCallback m_rx;
-  BooleanCallback m_state;
-  std::thread m_th;
-  bool m_init = false;
-  bool m_running = false;
-  std::atomic_bool m_connected{ false };
-  std::atomic_uint64_t m_nRxDeliveredAtomic{ 0 };
-  std::atomic_uint64_t m_nRxDroppedAtomic{ 0 };
+  class UvPoll
+  {
+  public:
+    explicit UvPoll(Memif* owner, int fd)
+      : owner(owner)
+      , fd(fd)
+    {
+      struct uv_loop_s* loop = nullptr;
+      napi_get_uv_event_loop(owner->Env(), &loop);
+      uv_poll_init(loop, &handle, fd);
+      handle.data = this;
+    }
 
+    ~UvPoll()
+    {
+      uv_poll_stop(&handle);
+    }
+
+    static UvPoll& of(uv_poll_t* handle)
+    {
+      return *reinterpret_cast<UvPoll*>(handle->data);
+    }
+
+  public:
+    uv_poll_t handle;
+    Memif* owner;
+    int fd;
+  };
+
+  static Memif* s_instance;
+  Napi::FunctionReference m_rx;
+  Napi::FunctionReference m_state;
+  std::unordered_map<int, std::unique_ptr<UvPoll>> m_uvPolls;
   memif_socket_handle_t m_sock = nullptr;
   memif_conn_handle_t m_conn = nullptr;
   uint64_t m_nRxDelivered = 0;
   uint64_t m_nRxDropped = 0;
   uint64_t m_nTxDelivered = 0;
   uint64_t m_nTxDropped = 0;
+  bool m_running = false;
+  bool m_connected = false;
 };
+
+Memif* Memif::s_instance = nullptr;
 
 Napi::Object
 Init(Napi::Env env, Napi::Object exports)

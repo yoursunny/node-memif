@@ -2,7 +2,7 @@
 
 [![npm package version](https://img.shields.io/npm/v/memif)](https://www.npmjs.com/package/memif) [![GitHub Workflow status](https://img.shields.io/github/workflow/status/yoursunny/node-memif/build?style=flat)](https://github.com/yoursunny/node-memif/actions) [![GitHub code size](https://img.shields.io/github/languages/code-size/yoursunny/node-memif?style=flat)](https://github.com/yoursunny/node-memif)
 
-This package is Node-API wrapper of [libmemif](https://docs.fd.io/vpp/21.06/dc/dea/libmemif_doc.html), which provides high performance packet transmit and receive between Node.js and VPP/DPDK applications.
+This package is a Node C++ addon of [libmemif](https://docs.fd.io/vpp/21.06/dc/dea/libmemif_doc.html), which provides high performance packet transmit and receive between Node.js and VPP/DPDK applications.
 It works on Linux only and requires libmemif installed at `/usr/local/lib/libmemif.so`.
 
 ## API Example
