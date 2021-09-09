@@ -81,6 +81,7 @@ export class Memif extends Duplex {
       throw new RangeError("ringCapacity out of range");
     }
 
+    this.dataroom = dataroom;
     this.native = newNativeMemif({
       socketName,
       id,
@@ -100,6 +101,9 @@ export class Memif extends Duplex {
   public get connected(): boolean {
     return this.connected_;
   }
+
+  /** Actual dataroom in octets. */
+  public readonly dataroom: number;
 
   /** Retrieve counters of incoming and outgoing packets. */
   public get counters(): Memif.Counters {

@@ -85,6 +85,7 @@ public:
       NAPI_THROW_VOID(Napi::Error::New(env, "memif_create error " + std::to_string(err)));
     }
 
+    m_dataroom = dataroom;
     m_rx = Napi::Persistent(rx);
     m_state = Napi::Persistent(state);
     m_running = true;
@@ -118,13 +119,13 @@ private:
 
   void send(const Napi::CallbackInfo& info)
   {
-    if (!m_connected) {
+    auto u8 = info[0].As<Napi::Uint8Array>();
+    size_t len = u8.ByteLength();
+
+    if (!m_connected || len > m_dataroom) {
       ++m_nTxDropped;
       return;
     }
-
-    auto u8 = info[0].As<Napi::Uint8Array>();
-    size_t len = u8.ByteLength();
 
     memif_buffer_t b{};
     uint16_t nAlloc = 0;
@@ -213,17 +214,29 @@ private:
   static int handleInterrupt(memif_conn_handle_t conn, void* self0, uint16_t qid)
   {
     auto self = reinterpret_cast<Memif*>(self0);
-    memif_buffer_t b{};
+    std::array<memif_buffer_t, 64> burst{};
     uint16_t nRx = 0;
-    int err = memif_rx_burst(conn, 0, &b, 1, &nRx);
-    if (err == MEMIF_ERR_SUCCESS && nRx == 1) {
-      auto u8 = Napi::Uint8Array::New(self->Env(), b.len);
-      std::memcpy(u8.Data(), b.data, b.len);
-      self->m_rx.Call({ u8 });
-      ++self->m_nRxDelivered;
+    int err = memif_rx_burst(conn, 0, burst.data(), burst.size(), &nRx);
+    if (err == MEMIF_ERR_SUCCESS) {
+      for (uint16_t i = 0; i < nRx; ++i) {
+        self->receive(burst[i]);
+      }
     }
     memif_refill_queue(conn, 0, nRx, 0);
     return 0;
+  }
+
+  void receive(const memif_buffer_t& b)
+  {
+    if ((b.flags & MEMIF_BUFFER_FLAG_NEXT) != 0) {
+      ++m_nRxDropped;
+      return;
+    }
+
+    auto u8 = Napi::Uint8Array::New(Env(), b.len);
+    std::memcpy(u8.Data(), b.data, b.len);
+    m_rx.Call({ u8 });
+    ++m_nRxDelivered;
   }
 
   void setState(bool up)
@@ -239,7 +252,6 @@ private:
   {
     if (m_running) {
       m_running = false;
-      // memif_cancel_poll_event();
       setState(false);
       m_rx.Unref();
       m_state.Unref();
@@ -305,6 +317,7 @@ private:
   std::unordered_map<int, std::unique_ptr<UvPoll>> m_uvPolls;
   memif_socket_handle_t m_sock = nullptr;
   memif_conn_handle_t m_conn = nullptr;
+  size_t m_dataroom = 0;
   uint64_t m_nRxDelivered = 0;
   uint64_t m_nRxDropped = 0;
   uint64_t m_nTxDelivered = 0;
