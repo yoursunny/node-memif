@@ -30,8 +30,7 @@ public:
                               InstanceMethod<&Memif::send>("send"),
                               InstanceMethod<&Memif::close>("close"),
                             });
-    auto ctor = new Napi::FunctionReference();
-    *ctor = Napi::Persistent(func);
+    auto ctor = new Napi::FunctionReference(Napi::Persistent(func));
     env.SetInstanceData(ctor);
 
     exports.Set("Memif", func);
@@ -55,22 +54,16 @@ public:
       return;
     }
 
-    if (s_instance != nullptr) {
-      Napi::Error::Fatal(__FILE__, "cannot create multiple Memif instances");
-    }
-    s_instance = this;
-    int err =
-      memif_init(handleControlFdUpdate, const_cast<char*>("node-memif"), nullptr, nullptr, nullptr);
+    int err = memif_per_thread_init(&m_main, this, handleControlFdUpdate,
+                                    const_cast<char*>("node-memif"), nullptr, nullptr, nullptr);
     if (err != MEMIF_ERR_SUCCESS) {
-      s_instance = nullptr;
       NAPI_THROW_VOID(Napi::Error::New(env, "memif_init error " + std::to_string(err)));
     }
 
-    err = memif_create_socket(&m_sock, socketName.data(), this);
+    err = memif_per_thread_create_socket(m_main, &m_sock, socketName.data(), this);
     if (err != MEMIF_ERR_SUCCESS) {
       stop();
-      NAPI_THROW_VOID(
-        Napi::Error::New(env, "memif_per_thread_create_socket error " + std::to_string(err)));
+      NAPI_THROW_VOID(Napi::Error::New(env, "memif_create_socket error " + std::to_string(err)));
     }
 
     memif_conn_args_t cargs{};
@@ -85,19 +78,17 @@ public:
       NAPI_THROW_VOID(Napi::Error::New(env, "memif_create error " + std::to_string(err)));
     }
 
-    m_dataroom = dataroom;
     m_rx = Napi::Persistent(rx);
     m_state = Napi::Persistent(state);
+    m_dataroom = dataroom;
     m_running = true;
-    s_instance = this;
   }
 
   static Napi::Value CreateNewItem(const Napi::CallbackInfo& info)
   {
     auto env = info.Env();
     auto ctor = env.GetInstanceData<Napi::FunctionReference>();
-    auto v = info[0];
-    return ctor->New({ v });
+    return ctor->New({ info[0] });
   }
 
   void Finalize(Napi::Env env) override
@@ -151,9 +142,9 @@ private:
     stop();
   }
 
-  static int handleControlFdUpdate(int fd, uint8_t events, void*)
+  static int handleControlFdUpdate(int fd, uint8_t events, void* self0)
   {
-    auto self = s_instance;
+    auto self = reinterpret_cast<Memif*>(self0);
     if ((events & MEMIF_FD_EVENT_DEL) != 0) {
       self->m_uvPolls.erase(fd);
       return 0;
@@ -191,9 +182,7 @@ private:
         memifEvents |= MEMIF_FD_EVENT_WRITE;
       }
     }
-
-    Napi::HandleScope scope(poll.owner->Env());
-    memif_control_fd_handler(poll.fd, memifEvents);
+    memif_per_thread_control_fd_handler(poll.owner->m_main, poll.fd, memifEvents);
   }
 
   static int handleConnect(memif_conn_handle_t conn, void* self0)
@@ -214,6 +203,10 @@ private:
   static int handleInterrupt(memif_conn_handle_t conn, void* self0, uint16_t qid)
   {
     auto self = reinterpret_cast<Memif*>(self0);
+    if (!self->m_running) {
+      return 0;
+    }
+
     std::array<memif_buffer_t, 64> burst{};
     uint16_t nRx = 0;
     int err = memif_rx_burst(conn, 0, burst.data(), burst.size(), &nRx);
@@ -233,7 +226,9 @@ private:
       return;
     }
 
-    auto u8 = Napi::Uint8Array::New(Env(), b.len);
+    auto env = Env();
+    Napi::HandleScope scope(env);
+    auto u8 = Napi::Uint8Array::New(env, b.len);
     std::memcpy(u8.Data(), b.data, b.len);
     m_rx.Call({ u8 });
     ++m_nRxDelivered;
@@ -245,7 +240,10 @@ private:
       return;
     }
     m_connected = up;
-    m_state.Call({ Napi::Boolean::New(Env(), up) });
+
+    auto env = Env();
+    Napi::HandleScope scope(env);
+    m_state.Call({ Napi::Boolean::New(env, up) });
   }
 
   void stop()
@@ -265,8 +263,8 @@ private:
       memif_delete_socket(&m_sock);
     }
 
-    if (s_instance == this) {
-      memif_cleanup();
+    if (m_main != nullptr) {
+      memif_per_thread_cleanup(&m_main);
 
       std::vector<int> fds;
       for (const auto& entry : m_uvPolls) {
@@ -276,8 +274,6 @@ private:
       for (int fd : fds) {
         ::close(fd);
       }
-
-      s_instance = nullptr;
     }
   }
 
@@ -311,13 +307,15 @@ private:
     int fd;
   };
 
-  static Memif* s_instance;
-  Napi::FunctionReference m_rx;
-  Napi::FunctionReference m_state;
   std::unordered_map<int, std::unique_ptr<UvPoll>> m_uvPolls;
+  memif_per_thread_main_handle_t m_main = nullptr;
   memif_socket_handle_t m_sock = nullptr;
   memif_conn_handle_t m_conn = nullptr;
+
+  Napi::FunctionReference m_rx;
+  Napi::FunctionReference m_state;
   size_t m_dataroom = 0;
+
   uint64_t m_nRxDelivered = 0;
   uint64_t m_nRxDropped = 0;
   uint64_t m_nTxDelivered = 0;
@@ -325,8 +323,6 @@ private:
   bool m_running = false;
   bool m_connected = false;
 };
-
-Memif* Memif::s_instance = nullptr;
 
 Napi::Object
 Init(Napi::Env env, Napi::Object exports)

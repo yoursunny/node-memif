@@ -102,7 +102,7 @@ export class Memif extends Duplex {
     return this.connected_;
   }
 
-  /** Actual dataroom in octets. */
+  /** Actual packet buffer size. */
   public readonly dataroom: number;
 
   /** Retrieve counters of incoming and outgoing packets. */
