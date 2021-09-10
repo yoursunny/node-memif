@@ -42,7 +42,7 @@ function newNativeMemif(opts: NativeMemifOptions): NativeMemif {
   return new addon.Memif(opts);
 }
 
-let isActive = false;
+const activeSocketNames = new Set<string>();
 
 /**
  * Shared Memory Packet Interface (memif).
@@ -64,11 +64,10 @@ export class Memif extends Duplex {
       objectMode: true,
     });
 
-    if (isActive) {
-      throw new Error("only one active Memif instance is allowed");
-    }
-
     socketName = path.resolve(socketName);
+    if (activeSocketNames.has(socketName)) {
+      throw new Error("socketName is in use");
+    }
     if (!(Number.isInteger(id) && id >= 0 && id <= 0xFFFFFFFF)) {
       throw new RangeError("id out of range");
     }
@@ -91,7 +90,8 @@ export class Memif extends Duplex {
       rx: this.handleRx,
       state: this.handleState,
     });
-    isActive = true;
+    this.socketName = socketName;
+    activeSocketNames.add(socketName);
   }
 
   /**
@@ -140,11 +140,12 @@ export class Memif extends Duplex {
 
   override _destroy(error: Error | null, callback: (error: Error | null) => void): void {
     this.native.close();
-    isActive = false;
+    activeSocketNames.delete(this.socketName);
     callback(error);
   }
 
   private readonly native: NativeMemif;
+  private readonly socketName: string;
   private connected_ = false;
 
   private readonly handleRx = (b: Uint8Array) => {

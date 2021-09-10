@@ -34,4 +34,6 @@ memif.close();
 
 ## Limitations
 
-Only one `Memif` instance is allowed in each Node.js process.
+Each `Memif` instance must have a distinct `socketName`.
+
+`MEMIF_BUFFER_FLAG_NEXT` is not supported.
