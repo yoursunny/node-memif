@@ -1,6 +1,6 @@
 {
   "name": "memif",
-  "version": "0.0.20210908",
+  "version": "0.0.20210909",
   "description": "Shared Memory Packet Interface (memif)",
   "author": "Junxiao Shi <npm@mail1.yoursunny.com>",
   "license": "ISC",
