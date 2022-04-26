@@ -51,8 +51,8 @@ public:
     }
 
     memif_socket_args_t sa{};
-    std::strncpy(sa.path, socketName.data(), sizeof(sa.path));
-    std::strncpy(sa.app_name, "node-memif", sizeof(sa.app_name));
+    std::strncpy(sa.path, socketName.data(), sizeof(sa.path) - 1);
+    std::strncpy(sa.app_name, "node-memif", sizeof(sa.app_name) - 1);
     sa.connection_request_timer.it_interval.tv_nsec = 250000000;
     sa.connection_request_timer.it_value.tv_nsec = 250000000;
     sa.on_control_fd_update = handleControlFdUpdate;
