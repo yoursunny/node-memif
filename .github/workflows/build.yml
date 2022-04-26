@@ -8,16 +8,16 @@ jobs:
   build:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/setup-node@v2
+      - uses: actions/setup-node@v3
         with:
-          node-version: '16'
-      - name: download VPP
-        uses: actions/checkout@v2
+          node-version: 16
+      - name: Download VPP
+        uses: actions/checkout@v3
         with:
           repository: FDio/vpp
-          ref: v21.06
+          ref: v22.02
           path: vpp
-      - name: install libmemif
+      - name: Install libmemif
         run: |
           cd $HOME
           mv $GITHUB_WORKSPACE/vpp $HOME/
@@ -27,13 +27,14 @@ jobs:
           sudo make install
           sudo ldconfig
       - uses: actions/checkout@v2
-      - name: build and test
+      - name: Build and test
         run: |
-          npm install
-          npm run build
-          npm test
-      - name: check code style
+          corepack pnpm install
+          corepack pnpm build
+          corepack pnpm typecheck
+          corepack pnpm test
+      - name: Check code style
         run: |
-          npm run lint
-          npm run clang-format
+          corepack pnpm lint
+          corepack pnpm clang-format
           git diff --exit-code

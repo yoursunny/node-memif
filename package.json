@@ -25,6 +25,7 @@
   "scripts": {
     "build": "tsc",
     "clang-format": "git ls-files '*.cc' | xargs clang-format-11 -i -style=file",
+    "install": "node-gyp rebuild",
     "lint": "xo --fix",
     "test": "node ./test/main.js",
     "typecheck": "tsc --checkJs --noEmit ./test/*.js"
@@ -32,16 +33,17 @@
   "gypfile": true,
   "os": ["linux"],
   "cpu": ["x64"],
+  "packageManager": "pnpm@6.32.10",
   "dependencies": {
-    "node-addon-api": "^4.1.0"
+    "node-addon-api": "^4.3.0"
   },
   "devDependencies": {
-    "@types/node": "^16.7.10",
-    "@types/tmp": "^0.2.1",
-    "@yoursunny/xo-config": "^0.44.0",
+    "@types/node": "^16.11.29",
+    "@types/tmp": "^0.2.3",
+    "@yoursunny/xo-config": "^0.48.1",
     "execa": "^5.1.1",
     "p-event": "^4.2.0",
     "tmp": "^0.2.1",
-    "typescript": "^4.4.2"
+    "typescript": "~4.6.3"
   }
 }

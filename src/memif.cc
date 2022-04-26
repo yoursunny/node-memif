@@ -1,12 +1,8 @@
 #define NAPI_VERSION 6
 #define NAPI_DISABLE_CPP_EXCEPTIONS
 
-#include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <iostream>
-#include <mutex>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -54,25 +50,25 @@ public:
       return;
     }
 
-    int err = memif_per_thread_init(&m_main, this, handleControlFdUpdate,
-                                    const_cast<char*>("node-memif"), nullptr, nullptr, nullptr);
-    if (err != MEMIF_ERR_SUCCESS) {
-      NAPI_THROW_VOID(Napi::Error::New(env, "memif_init error " + std::to_string(err)));
-    }
-
-    err = memif_per_thread_create_socket(m_main, &m_sock, socketName.data(), this);
+    memif_socket_args_t sa{};
+    std::strncpy(sa.path, socketName.data(), sizeof(sa.path));
+    std::strncpy(sa.app_name, "node-memif", sizeof(sa.app_name));
+    sa.connection_request_timer.it_interval.tv_nsec = 250000000;
+    sa.connection_request_timer.it_value.tv_nsec = 250000000;
+    sa.on_control_fd_update = handleControlFdUpdate;
+    int err = memif_create_socket(&m_sock, &sa, this);
     if (err != MEMIF_ERR_SUCCESS) {
       stop();
       NAPI_THROW_VOID(Napi::Error::New(env, "memif_create_socket error " + std::to_string(err)));
     }
 
-    memif_conn_args_t cargs{};
-    cargs.socket = m_sock;
-    cargs.interface_id = id;
-    cargs.buffer_size = static_cast<uint16_t>(dataroom);
-    cargs.log2_ring_size = static_cast<uint8_t>(ringCapacityLog2);
-    cargs.is_master = static_cast<uint8_t>(isServer);
-    err = memif_create(&m_conn, &cargs, handleConnect, handleDisconnect, handleInterrupt, this);
+    memif_conn_args_t ca{};
+    ca.socket = m_sock;
+    ca.interface_id = id;
+    ca.buffer_size = static_cast<uint16_t>(dataroom);
+    ca.log2_ring_size = static_cast<uint8_t>(ringCapacityLog2);
+    ca.is_master = static_cast<uint8_t>(isServer);
+    err = memif_create(&m_conn, &ca, handleConnect, handleDisconnect, handleInterrupt, this);
     if (err != MEMIF_ERR_SUCCESS) {
       stop();
       NAPI_THROW_VOID(Napi::Error::New(env, "memif_create error " + std::to_string(err)));
@@ -142,28 +138,28 @@ private:
     stop();
   }
 
-  static int handleControlFdUpdate(int fd, uint8_t events, void* self0)
+  static int handleControlFdUpdate(memif_fd_event_t fde, void* self0)
   {
     auto self = reinterpret_cast<Memif*>(self0);
-    if ((events & MEMIF_FD_EVENT_DEL) != 0) {
-      self->m_uvPolls.erase(fd);
+    if ((fde.type & MEMIF_FD_EVENT_DEL) != 0) {
+      self->m_uvPolls.erase(fde.fd);
       return 0;
     }
 
     int uvEvents = 0;
-    if ((events & MEMIF_FD_EVENT_READ) != 0) {
+    if ((fde.type & MEMIF_FD_EVENT_READ) != 0) {
       uvEvents |= UV_READABLE;
     }
-    if ((events & MEMIF_FD_EVENT_WRITE) != 0) {
+    if ((fde.type & MEMIF_FD_EVENT_WRITE) != 0) {
       uvEvents |= UV_WRITABLE;
     }
     if (uvEvents == 0) {
       return 0;
     }
 
-    auto& ptr = self->m_uvPolls[fd];
+    auto& ptr = self->m_uvPolls[fde.fd];
     if (ptr == nullptr) {
-      ptr.reset(new UvPoll(self, fd));
+      ptr.reset(new UvPoll(fde, self));
     }
     return uv_poll_start(&ptr->handle, uvEvents, handlePoll);
   }
@@ -171,7 +167,7 @@ private:
   static void handlePoll(uv_poll_t* handle, int status, int events)
   {
     UvPoll& poll = UvPoll::of(handle);
-    uint8_t memifEvents = 0;
+    int memifEvents = 0;
     if (status < 0) {
       memifEvents = MEMIF_FD_EVENT_ERROR;
     } else {
@@ -182,7 +178,7 @@ private:
         memifEvents |= MEMIF_FD_EVENT_WRITE;
       }
     }
-    memif_per_thread_control_fd_handler(poll.owner->m_main, poll.fd, memifEvents);
+    memif_control_fd_handler(poll.private_ctx, static_cast<memif_fd_event_type_t>(memifEvents));
   }
 
   static int handleConnect(memif_conn_handle_t conn, void* self0)
@@ -263,27 +259,23 @@ private:
       memif_delete_socket(&m_sock);
     }
 
-    if (m_main != nullptr) {
-      memif_per_thread_cleanup(&m_main);
-
-      std::vector<int> fds;
-      for (const auto& entry : m_uvPolls) {
-        fds.push_back(entry.second->fd);
-      }
-      m_uvPolls.clear();
-      for (int fd : fds) {
-        ::close(fd);
-      }
+    std::vector<int> fds;
+    for (const auto& entry : m_uvPolls) {
+      fds.push_back(entry.second->fd);
+    }
+    m_uvPolls.clear();
+    for (int fd : fds) {
+      ::close(fd);
     }
   }
 
 private:
-  class UvPoll
+  class UvPoll : public memif_fd_event_t
   {
   public:
-    explicit UvPoll(Memif* owner, int fd)
-      : owner(owner)
-      , fd(fd)
+    explicit UvPoll(memif_fd_event_t fde, Memif* owner)
+      : memif_fd_event_t(fde)
+      , owner(owner)
     {
       struct uv_loop_s* loop = nullptr;
       napi_get_uv_event_loop(owner->Env(), &loop);
@@ -304,11 +296,9 @@ private:
   public:
     uv_poll_t handle;
     Memif* owner;
-    int fd;
   };
 
   std::unordered_map<int, std::unique_ptr<UvPoll>> m_uvPolls;
-  memif_per_thread_main_handle_t m_main = nullptr;
   memif_socket_handle_t m_sock = nullptr;
   memif_conn_handle_t m_conn = nullptr;
 

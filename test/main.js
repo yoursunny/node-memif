@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 const { Memif } = require("..");
-const { strict: assert } = require("assert");
-const crypto = require("crypto");
+const { strict: assert } = require("node:assert");
+const crypto = require("node:crypto");
 const execa = require("execa");
 const path = require("path");
 const pEvent = require("p-event");

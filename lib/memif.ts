@@ -65,6 +65,9 @@ export class Memif extends Duplex {
     });
 
     socketName = path.resolve(socketName);
+    if (socketName.length >= 108) {
+      throw new Error("socketName too long");
+    }
     if (activeSocketNames.has(socketName)) {
       throw new Error("socketName is in use");
     }
