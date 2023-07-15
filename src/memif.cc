@@ -97,31 +97,38 @@ private:
   {
     auto env = info.Env();
     auto cnt = Napi::Object::New(env);
-    cnt.Set("nRxDelivered", Napi::BigInt::New(env, m_nRxDelivered));
-    cnt.Set("nRxDropped", Napi::BigInt::New(env, m_nRxDropped));
-    cnt.Set("nTxDelivered", Napi::BigInt::New(env, m_nTxDelivered));
+    cnt.Set("nRxPackets", Napi::BigInt::New(env, m_nRxPackets));
+    cnt.Set("nRxFragments", Napi::BigInt::New(env, m_nRxFragments));
+    cnt.Set("nTxPackets", Napi::BigInt::New(env, m_nTxPackets));
+    cnt.Set("nTxFragments", Napi::BigInt::New(env, m_nTxFragments));
     cnt.Set("nTxDropped", Napi::BigInt::New(env, m_nTxDropped));
     return cnt;
   }
 
   void send(const Napi::CallbackInfo& info)
   {
-    auto u8 = info[0].As<Napi::Uint8Array>();
-    size_t len = u8.ByteLength();
+    auto buffer = info[0].As<Napi::ArrayBuffer>();
+    uint32_t offset = info[1].ToNumber();
+    uint32_t length = info[2].ToNumber();
+    bool hasNext = info[3].ToBoolean();
 
-    if (!m_connected || len > m_dataroom) {
+    if (!m_connected || length > m_dataroom) {
       ++m_nTxDropped;
       return;
     }
 
     memif_buffer_t b{};
     uint16_t nAlloc = 0;
-    int err = memif_buffer_alloc(m_conn, 0, &b, 1, &nAlloc, len);
+    int err = memif_buffer_alloc(m_conn, 0, &b, 1, &nAlloc, length);
     if (err != MEMIF_ERR_SUCCESS) {
       ++m_nTxDropped;
       return;
     }
-    std::copy_n(u8.Data(), len, reinterpret_cast<uint8_t*>(b.data));
+    std::copy_n(reinterpret_cast<const uint8_t*>(buffer.Data()) + offset, length,
+                reinterpret_cast<uint8_t*>(b.data));
+    if (hasNext) {
+      b.flags |= MEMIF_BUFFER_FLAG_NEXT;
+    }
 
     uint16_t nTx = 0;
     err = memif_tx_burst(m_conn, 0, &b, 1, &nTx);
@@ -130,7 +137,10 @@ private:
       return;
     }
 
-    ++m_nTxDelivered;
+    if (!hasNext) {
+      ++m_nTxPackets;
+    }
+    ++m_nTxFragments;
   }
 
   void close(const Napi::CallbackInfo& info)
@@ -217,17 +227,18 @@ private:
 
   void receive(const memif_buffer_t& b)
   {
-    if ((b.flags & MEMIF_BUFFER_FLAG_NEXT) != 0) {
-      ++m_nRxDropped;
-      return;
-    }
-
     auto env = Env();
     Napi::HandleScope scope(env);
     auto u8 = Napi::Uint8Array::New(env, b.len);
     std::memcpy(u8.Data(), b.data, b.len);
-    m_rx.Call({ u8 });
-    ++m_nRxDelivered;
+    bool hasNext = (b.flags & MEMIF_BUFFER_FLAG_NEXT) != 0;
+    auto hasNextB = Napi::Boolean::New(env, hasNext);
+    m_rx.Call({ u8, hasNextB });
+
+    if (!hasNext) {
+      ++m_nRxPackets;
+    }
+    ++m_nRxFragments;
   }
 
   void setState(bool up)
@@ -306,9 +317,10 @@ private:
   Napi::FunctionReference m_state;
   size_t m_dataroom = 0;
 
-  uint64_t m_nRxDelivered = 0;
-  uint64_t m_nRxDropped = 0;
-  uint64_t m_nTxDelivered = 0;
+  uint64_t m_nRxPackets = 0;
+  uint64_t m_nRxFragments = 0;
+  uint64_t m_nTxPackets = 0;
+  uint64_t m_nTxFragments = 0;
   uint64_t m_nTxDropped = 0;
   bool m_running = false;
   bool m_connected = false;

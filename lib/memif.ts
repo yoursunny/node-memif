@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 
 interface NativeMemif {
   readonly counters: Memif.Counters;
-  send: (b: Uint8Array) => void;
+  send: (buffer: ArrayBuffer, offset: number, len: number, hasNext: boolean) => void;
   close: () => void;
 }
 
@@ -18,7 +18,7 @@ interface NativeMemifOptions {
   dataroom: number;
   ringCapacityLog2: number;
   isServer: boolean;
-  rx: (b: Uint8Array) => void;
+  rx: (b: Uint8Array, hasNext: boolean) => void;
   state: (up: boolean) => void;
 }
 
@@ -120,20 +120,24 @@ export class Memif extends Duplex {
   override _write(chunk: any, encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
     void encoding;
 
-    let u8: Uint8Array;
-    if (chunk instanceof Uint8Array) {
-      u8 = chunk;
+    let buffer: ArrayBuffer;
+    let offset: number;
+    let length: number;
+    if (ArrayBuffer.isView(chunk)) {
+      buffer = chunk.buffer;
+      offset = chunk.byteOffset;
+      length = chunk.byteLength;
     } else if (chunk instanceof ArrayBuffer) {
-      u8 = new Uint8Array(chunk);
-    } else if (ArrayBuffer.isView(chunk)) {
-      u8 = new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+      buffer = chunk;
+      offset = 0;
+      length = chunk.byteLength;
     } else {
       callback(new TypeError("chunk must be ArrayBufferView or ArrayBuffer"));
       return;
     }
 
     try {
-      this.native.send(u8);
+      this.native.send(buffer, offset, length, false);
     } catch (err: unknown) {
       callback(err as Error);
       return;
@@ -150,8 +154,18 @@ export class Memif extends Duplex {
   private readonly native: NativeMemif;
   private readonly socketName: string;
   private connected_ = false;
+  private rxChunks: Uint8Array[] = [];
 
-  private readonly handleRx = (b: Uint8Array) => {
+  private readonly handleRx = (b: Uint8Array, hasNext: boolean) => {
+    if (hasNext) {
+      this.rxChunks.push(b);
+      return;
+    }
+
+    if (this.rxChunks.length > 0) {
+      this.rxChunks.push(b);
+      b = Buffer.concat(this.rxChunks.splice(0, Infinity));
+    }
     this.push(b);
   };
 
@@ -191,9 +205,10 @@ export namespace Memif {
   }
 
   export interface Counters {
-    nRxDelivered: bigint;
-    nRxDropped: bigint;
-    nTxDelivered: bigint;
+    nRxPackets: bigint;
+    nRxFragments: bigint;
+    nTxPackets: bigint;
+    nTxFragments: bigint;
     nTxDropped: bigint;
   }
 }

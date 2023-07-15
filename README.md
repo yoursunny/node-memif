@@ -22,6 +22,7 @@ const memif = new Memif({
 // Readable side of the stream gives access to received packets.
 memif.on("data", (pkt) => {
   // pkt is a Uint8Array containing received packet.
+  // Fragmented messages with MEMIF_BUFFER_FLAG_NEXT are concatenated.
 });
 
 // Writable side of the stream allows transmitting packets.
@@ -35,5 +36,3 @@ memif.close();
 ## Limitations
 
 Each `Memif` instance must have a distinct `socketName`.
-
-`MEMIF_BUFFER_FLAG_NEXT` is not supported.
