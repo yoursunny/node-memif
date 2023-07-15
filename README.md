@@ -8,7 +8,7 @@ It works on Linux only and requires libmemif 4.0 installed at `/usr/local/lib/li
 ## API Example
 
 ```js
-const { Memif } = require("memif");
+import { Memif } from "memif";
 
 // Memif class is a Node.js Duplex stream.
 const memif = new Memif({

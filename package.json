@@ -15,7 +15,7 @@
     "dist",
     "src"
   ],
-  "type": "commonjs",
+  "type": "module",
   "main": "dist/memif.js",
   "types": "dist/memif.d.ts",
   "repository": {
@@ -27,8 +27,8 @@
     "clang-format": "git ls-files '*.cc' | xargs clang-format-11 -i -style=file",
     "install": "node-gyp rebuild",
     "lint": "xo --fix",
-    "test": "node ./test/main.mjs",
-    "typecheck": "tsc --checkJs --noEmit ./test"
+    "test": "node ./test/main.js",
+    "typecheck": "tsc -p ./test"
   },
   "gypfile": true,
   "packageManager": "pnpm@8.6.7",

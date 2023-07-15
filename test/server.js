@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const { Memif } = require("..");
+import { Memif } from "../dist/memif.js";
 
 if (!process.connected) {
   process.exit(1);

@@ -1,23 +1,20 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { execaNode } from "execa";
 import { pEvent } from "p-event";
+import tmp from "tmp";
 
-const require = createRequire(import.meta.url);
-
-const { Memif } = require("..");
-const tmp = require("tmp");
+import { Memif } from "../dist/memif.js";
 
 const tmpDir = tmp.dirSync({ unsafeCleanup: true });
 process.on("beforeExit", tmpDir.removeCallback);
 
 const socketName = `${tmpDir.name}/memif.sock`;
-const helper = execaNode(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "server.cjs"), [socketName], {
+const helper = execaNode(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "server.js"), [socketName], {
   stdin: "ignore",
   stdout: "inherit",
   stderr: "inherit",

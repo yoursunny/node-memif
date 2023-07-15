@@ -1,6 +1,10 @@
 import * as fs from "node:fs";
+import { createRequire } from "node:module";
 import * as path from "node:path";
 import { Duplex } from "node:stream";
+import { fileURLToPath } from "node:url";
+
+const require = createRequire(import.meta.url);
 
 interface NativeMemif {
   readonly counters: Memif.Counters;
@@ -30,7 +34,7 @@ function newNativeMemif(opts: NativeMemifOptions): NativeMemif {
       suggest = `os=${process.platform} cpu=${process.arch} are not supported`;
     } else if (!fs.existsSync("/usr/local/lib/libmemif.so")) {
       suggest = "/usr/local/lib/libmemif.so does not exist, reinstall libmemif";
-    } else if (!fs.existsSync(path.resolve(__dirname, "../build/Release/memif-native.node"))) {
+    } else if (!fs.existsSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../build/Release/memif-native.node"))) {
       suggest = "memif-native.node does not exist, reinstall node-memif";
     }
     throw new Error(`cannot load memif C++ addon: ${suggest}\n${err}`);
