@@ -1,24 +1,29 @@
 #!/usr/bin/env node
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { execaNode } from "execa";
+import { pEvent } from "p-event";
+
+const require = createRequire(import.meta.url);
+
 const { Memif } = require("..");
-const { strict: assert } = require("node:assert");
-const crypto = require("node:crypto");
-const execa = require("execa");
-const path = require("path");
-const pEvent = require("p-event");
 const tmp = require("tmp");
 
 const tmpDir = tmp.dirSync({ unsafeCleanup: true });
 process.on("beforeExit", tmpDir.removeCallback);
 
 const socketName = `${tmpDir.name}/memif.sock`;
-const helper = execa.node(path.resolve(__dirname, "server.js"), [socketName], {
+const helper = execaNode(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "server.cjs"), [socketName], {
   stdin: "ignore",
   stdout: "inherit",
   stderr: "inherit",
   serialization: "advanced",
 });
 
-(async () => {
 const memif = new Memif({ socketName });
 assert(!memif.connected);
 await pEvent(memif, "memif:up");
@@ -46,4 +51,3 @@ await Promise.all([
 assert(!memif.connected);
 
 memif.destroy();
-})();

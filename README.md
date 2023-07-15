@@ -1,8 +1,8 @@
 # Shared Memory Packet Interface (memif) for Node.js
 
-[![npm package version](https://img.shields.io/npm/v/memif)](https://www.npmjs.com/package/memif) [![GitHub Workflow status](https://img.shields.io/github/workflow/status/yoursunny/node-memif/build?style=flat)](https://github.com/yoursunny/node-memif/actions) [![GitHub code size](https://img.shields.io/github/languages/code-size/yoursunny/node-memif?style=flat)](https://github.com/yoursunny/node-memif)
+[![npm package version](https://img.shields.io/npm/v/memif)](https://www.npmjs.com/package/memif) [![GitHub Workflow status](https://img.shields.io/github/actions/workflow/status/yoursunny/node-memif/build.yml?style=flat)](https://github.com/yoursunny/node-memif/actions) [![GitHub code size](https://img.shields.io/github/languages/code-size/yoursunny/node-memif?style=flat)](https://github.com/yoursunny/node-memif)
 
-This package is a Node C++ addon of [libmemif](https://s3-docs.fd.io/vpp/22.02/interfacing/libmemif/), which provides high performance packet transmit and receive between Node.js and VPP/DPDK applications.
+This package is a Node C++ addon of [libmemif](https://s3-docs.fd.io/vpp/23.06/interfacing/libmemif/), which provides high performance packet transmit and receive between Node.js and VPP/DPDK applications.
 It works on Linux only and requires libmemif 4.0 installed at `/usr/local/lib/libmemif.so`.
 
 ## API Example

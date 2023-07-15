@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: FDio/vpp
-          ref: v22.02
+          ref: v23.06
           path: vpp
       - name: Install libmemif
         run: |
