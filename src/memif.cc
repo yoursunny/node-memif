@@ -110,37 +110,35 @@ private:
     auto buffer = info[0].As<Napi::ArrayBuffer>();
     uint32_t offset = info[1].ToNumber();
     uint32_t length = info[2].ToNumber();
-    bool hasNext = info[3].ToBoolean();
 
-    if (!m_connected || length > m_dataroom) {
+    if (!m_connected) {
       ++m_nTxDropped;
       return;
     }
 
-    memif_buffer_t b{};
+    std::vector<memif_buffer_t> b(length / m_dataroom + 1);
     uint16_t nAlloc = 0;
-    int err = memif_buffer_alloc(m_conn, 0, &b, 1, &nAlloc, length);
+    int err = memif_buffer_alloc(m_conn, 0, b.data(), 1, &nAlloc, length);
     if (err != MEMIF_ERR_SUCCESS) {
       ++m_nTxDropped;
       return;
     }
-    std::copy_n(reinterpret_cast<const uint8_t*>(buffer.Data()) + offset, length,
-                reinterpret_cast<uint8_t*>(b.data));
-    if (hasNext) {
-      b.flags |= MEMIF_BUFFER_FLAG_NEXT;
+
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(buffer.Data()) + offset;
+    for (uint16_t i = 0; i < nAlloc; ++i) {
+      std::copy_n(data, b[i].len, reinterpret_cast<uint8_t*>(b[i].data));
+      data += b[i].len;
     }
 
     uint16_t nTx = 0;
-    err = memif_tx_burst(m_conn, 0, &b, 1, &nTx);
+    err = memif_tx_burst(m_conn, 0, b.data(), nAlloc, &nTx);
     if (err != MEMIF_ERR_SUCCESS) {
       ++m_nTxDropped;
       return;
     }
 
-    if (!hasNext) {
-      ++m_nTxPackets;
-    }
-    ++m_nTxFragments;
+    ++m_nTxPackets;
+    m_nTxFragments += nAlloc;
   }
 
   void close(const Napi::CallbackInfo& info)

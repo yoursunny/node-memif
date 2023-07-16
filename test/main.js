@@ -23,36 +23,37 @@ const helper = execaNode(path.resolve(path.dirname(fileURLToPath(import.meta.url
 });
 
 const memif = new Memif({ socketName });
+assert.equal(memif.dataroom, 2048);
 assert(!memif.connected);
 await pEvent(memif, "memif:up");
 assert(memif.connected);
 
 const msg0 = crypto.randomBytes(1500);
-const msg1 = crypto.randomBytes(2000);
+const msg1 = crypto.randomBytes(3000);
 const msg2 = crypto.randomBytes(1000);
+const msg3 = crypto.randomBytes(5500);
+const msg4 = new ArrayBuffer(50);
+crypto.randomFillSync(new Uint8Array(msg4));
 
 setTimeout(async () => {
   memif.write(msg0);
   await delay(10);
-
-  // @ts-expect-error
-  const native = memif.native;
-  const chunk0 = msg1.subarray(0, 1200);
-  const chunk1 = msg1.subarray(1200, 2000);
-  native.send(chunk0.buffer, chunk0.byteOffset, chunk0.byteLength, true);
-  native.send(chunk1.buffer, chunk1.byteOffset, chunk1.byteLength, false);
+  memif.write(msg1);
 }, 0);
-setTimeout(() => {
+setTimeout(async () => {
   helper.send(msg2);
+  await delay(10);
+  helper.send(msg3);
 }, 0);
-const [[rcv0, rcv1], rcv2] = await Promise.all([
-  pEventMultiple(helper, "message", { count: 2 }),
-  pEvent(memif, "data"),
+const [[rcv0, rcv1], [rcv2, rcv3]] = await Promise.all([
+  pEventMultiple(helper, "message", { count: 2, timeout: 2000 }),
+  pEventMultiple(memif, "data", { count: 2, timeout: 2000 }),
 ]);
 
 assert(msg0.equals(rcv0));
 assert(msg1.equals(rcv1));
 assert(msg2.equals(rcv2));
+assert(msg3.equals(rcv3));
 
 assert(memif.connected);
 helper.disconnect();
@@ -61,12 +62,13 @@ await Promise.all([
   pEvent(helper, "exit"),
 ]);
 assert(!memif.connected);
+memif.write(msg4);
 
 const cnt = memif.counters;
-assert.equal(cnt.nRxPackets, 1n);
-assert.equal(cnt.nRxFragments, 1n);
+assert.equal(cnt.nRxPackets, 2n);
+assert.equal(cnt.nRxFragments, 4n);
 assert.equal(cnt.nTxPackets, 2n);
 assert.equal(cnt.nTxFragments, 3n);
-assert.equal(cnt.nTxDropped, 0n);
+assert.equal(cnt.nTxDropped, 1n);
 
 memif.destroy();

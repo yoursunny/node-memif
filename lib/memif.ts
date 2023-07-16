@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 
 interface NativeMemif {
   readonly counters: Memif.Counters;
-  send: (buffer: ArrayBuffer, offset: number, len: number, hasNext: boolean) => void;
+  send: (buffer: ArrayBuffer, offset: number, len: number) => void;
   close: () => void;
 }
 
@@ -137,7 +137,7 @@ export class Memif extends Duplex {
     }
 
     try {
-      this.native.send(buffer, offset, length, false);
+      this.native.send(buffer, offset, length);
     } catch (err: unknown) {
       callback(err as Error);
       return;
