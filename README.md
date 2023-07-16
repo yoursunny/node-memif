@@ -27,6 +27,7 @@ memif.on("data", (pkt) => {
 
 // Writable side of the stream allows transmitting packets.
 // It accepts ArrayBufferView (including Uint8Array and Buffer) and ArrayBuffer.
+// If packet is longer than dataroom, it is fragmented with MEMIF_BUFFER_FLAG_NEXT.
 memif.send(Uint8Array.of(0x01, 0x02));
 
 // Be sure to close the interface when no longer needed.
