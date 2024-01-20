@@ -5,11 +5,7 @@ const { js, ts, merge } = require("@yoursunny/xo-config");
 
 /** @type {XoOptions} */
 module.exports = {
-  ...merge(js, {
-    rules: {
-      "unicorn/prefer-node-protocol": "off",
-    },
-  }),
+  ...js,
   overrides: [
     {
       files: [
