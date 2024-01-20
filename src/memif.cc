@@ -10,16 +10,13 @@
 
 #include <napi.h>
 #include <uv.h>
-extern "C"
-{
+extern "C" {
 #include <libmemif.h>
 }
 
-class Memif : public Napi::ObjectWrap<Memif>
-{
+class Memif : public Napi::ObjectWrap<Memif> {
 public:
-  static Napi::Object Init(Napi::Env env, Napi::Object exports)
-  {
+  static Napi::Object Init(Napi::Env env, Napi::Object exports) {
     auto func = DefineClass(env, "Memif",
                             {
                               InstanceAccessor("counters", &Memif::counters, nullptr),
@@ -34,8 +31,7 @@ public:
   }
 
   explicit Memif(const Napi::CallbackInfo& info)
-    : Napi::ObjectWrap<Memif>(info)
-  {
+    : Napi::ObjectWrap<Memif>(info) {
     auto env = info.Env();
 
     auto args = info[0].ToObject();
@@ -80,21 +76,18 @@ public:
     m_running = true;
   }
 
-  static Napi::Value CreateNewItem(const Napi::CallbackInfo& info)
-  {
+  static Napi::Value CreateNewItem(const Napi::CallbackInfo& info) {
     auto env = info.Env();
     auto ctor = env.GetInstanceData<Napi::FunctionReference>();
-    return ctor->New({ info[0] });
+    return ctor->New({info[0]});
   }
 
-  void Finalize(Napi::Env env) override
-  {
+  void Finalize(Napi::Env env) override {
     stop();
   }
 
 private:
-  Napi::Value counters(const Napi::CallbackInfo& info)
-  {
+  Napi::Value counters(const Napi::CallbackInfo& info) {
     auto env = info.Env();
     auto cnt = Napi::Object::New(env);
     cnt.Set("nRxPackets", Napi::BigInt::New(env, m_nRxPackets));
@@ -105,8 +98,7 @@ private:
     return cnt;
   }
 
-  void send(const Napi::CallbackInfo& info)
-  {
+  void send(const Napi::CallbackInfo& info) {
     auto buffer = info[0].As<Napi::ArrayBuffer>();
     uint32_t offset = info[1].ToNumber();
     uint32_t length = info[2].ToNumber();
@@ -141,13 +133,11 @@ private:
     m_nTxFragments += nAlloc;
   }
 
-  void close(const Napi::CallbackInfo& info)
-  {
+  void close(const Napi::CallbackInfo& info) {
     stop();
   }
 
-  static int handleControlFdUpdate(memif_fd_event_t fde, void* self0)
-  {
+  static int handleControlFdUpdate(memif_fd_event_t fde, void* self0) {
     auto self = reinterpret_cast<Memif*>(self0);
     if ((fde.type & MEMIF_FD_EVENT_DEL) != 0) {
       self->m_uvPolls.erase(fde.fd);
@@ -172,8 +162,7 @@ private:
     return uv_poll_start(&ptr->handle, uvEvents, handlePoll);
   }
 
-  static void handlePoll(uv_poll_t* handle, int status, int events)
-  {
+  static void handlePoll(uv_poll_t* handle, int status, int events) {
     UvPoll& poll = UvPoll::of(handle);
     int memifEvents = 0;
     if (status < 0) {
@@ -189,23 +178,20 @@ private:
     memif_control_fd_handler(poll.private_ctx, static_cast<memif_fd_event_type_t>(memifEvents));
   }
 
-  static int handleConnect(memif_conn_handle_t conn, void* self0)
-  {
+  static int handleConnect(memif_conn_handle_t conn, void* self0) {
     auto self = reinterpret_cast<Memif*>(self0);
     memif_refill_queue(conn, 0, -1, 0);
     self->setState(true);
     return 0;
   }
 
-  static int handleDisconnect(memif_conn_handle_t conn, void* self0)
-  {
+  static int handleDisconnect(memif_conn_handle_t conn, void* self0) {
     auto self = reinterpret_cast<Memif*>(self0);
     self->setState(false);
     return 0;
   }
 
-  static int handleInterrupt(memif_conn_handle_t conn, void* self0, uint16_t qid)
-  {
+  static int handleInterrupt(memif_conn_handle_t conn, void* self0, uint16_t qid) {
     auto self = reinterpret_cast<Memif*>(self0);
     if (!self->m_running) {
       return 0;
@@ -223,15 +209,14 @@ private:
     return 0;
   }
 
-  void receive(const memif_buffer_t& b)
-  {
+  void receive(const memif_buffer_t& b) {
     auto env = Env();
     Napi::HandleScope scope(env);
     auto u8 = Napi::Uint8Array::New(env, b.len);
     std::memcpy(u8.Data(), b.data, b.len);
     bool hasNext = (b.flags & MEMIF_BUFFER_FLAG_NEXT) != 0;
     auto hasNextB = Napi::Boolean::New(env, hasNext);
-    m_rx.Call({ u8, hasNextB });
+    m_rx.Call({u8, hasNextB});
 
     if (!hasNext) {
       ++m_nRxPackets;
@@ -239,8 +224,7 @@ private:
     ++m_nRxFragments;
   }
 
-  void setState(bool up)
-  {
+  void setState(bool up) {
     if (m_connected == up) {
       return;
     }
@@ -248,11 +232,10 @@ private:
 
     auto env = Env();
     Napi::HandleScope scope(env);
-    m_state.Call({ Napi::Boolean::New(env, up) });
+    m_state.Call({Napi::Boolean::New(env, up)});
   }
 
-  void stop()
-  {
+  void stop() {
     if (m_running) {
       m_running = false;
       setState(false);
@@ -279,26 +262,22 @@ private:
   }
 
 private:
-  class UvPoll : public memif_fd_event_t
-  {
+  class UvPoll : public memif_fd_event_t {
   public:
     explicit UvPoll(memif_fd_event_t fde, Memif* owner)
       : memif_fd_event_t(fde)
-      , owner(owner)
-    {
+      , owner(owner) {
       struct uv_loop_s* loop = nullptr;
       napi_get_uv_event_loop(owner->Env(), &loop);
       uv_poll_init(loop, &handle, fd);
       handle.data = this;
     }
 
-    ~UvPoll()
-    {
+    ~UvPoll() {
       uv_poll_stop(&handle);
     }
 
-    static UvPoll& of(uv_poll_t* handle)
-    {
+    static UvPoll& of(uv_poll_t* handle) {
       return *reinterpret_cast<UvPoll*>(handle->data);
     }
 
@@ -325,8 +304,7 @@ private:
 };
 
 Napi::Object
-Init(Napi::Env env, Napi::Object exports)
-{
+Init(Napi::Env env, Napi::Object exports) {
   return Memif::Init(env, exports);
 }
 

@@ -34,7 +34,7 @@ function newNativeMemif(opts: NativeMemifOptions): NativeMemif {
       suggest = `os=${process.platform} cpu=${process.arch} are not supported`;
     } else if (!fs.existsSync("/usr/local/lib/libmemif.so")) {
       suggest = "/usr/local/lib/libmemif.so does not exist, reinstall libmemif";
-    } else if (!fs.existsSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../build/Release/memif-native.node"))) {
+    } else if (!fs.existsSync(fileURLToPath(new URL("../build/Release/memif-native.node", import.meta.url)))) {
       suggest = "memif-native.node does not exist, reinstall node-memif";
     }
     throw new Error(`cannot load memif C++ addon: ${suggest}\n${err}`);
@@ -49,7 +49,7 @@ const activeSocketNames = new Set<string>();
  *
  * This class wraps libmemif as a Duplex stream in object mode.
  * Received packets can be read from the stream as Uint8Array.
- * To transmit a packet, write a ArrayBufferView or ArrayBuffer to the stream.
+ * To transmit a packet, write an ArrayBufferView or ArrayBuffer to the stream.
  */
 export class Memif extends Duplex {
   constructor({
@@ -164,7 +164,8 @@ export class Memif extends Duplex {
 
     if (this.rxChunks.length > 0) {
       this.rxChunks.push(b);
-      b = Buffer.concat(this.rxChunks.splice(0, Infinity));
+      b = Buffer.concat(this.rxChunks);
+      this.rxChunks = [];
     }
     this.push(b);
   };

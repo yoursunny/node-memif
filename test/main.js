@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
@@ -15,7 +14,7 @@ const tmpDir = tmp.dirSync({ unsafeCleanup: true });
 process.on("beforeExit", tmpDir.removeCallback);
 
 const socketName = `${tmpDir.name}/memif.sock`;
-const helper = execaNode(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "server.js"), [socketName], {
+const helper = execaNode(fileURLToPath(new URL("server.js", import.meta.url)), [socketName], {
   stdin: "ignore",
   stdout: "inherit",
   stderr: "inherit",

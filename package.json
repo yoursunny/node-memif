@@ -24,24 +24,24 @@
   },
   "scripts": {
     "build": "tsc",
-    "clang-format": "git ls-files '*.cc' | xargs clang-format-11 -i -style=file",
+    "clang-format": "git ls-files '*.cc' | xargs clang-format-15 -i -style=file",
     "install": "node-gyp rebuild",
-    "lint": "xo --fix",
+    "lint": "xo-yoursunny --fix",
     "test": "node ./test/main.js",
     "typecheck": "tsc -p ./test"
   },
   "gypfile": true,
-  "packageManager": "pnpm@8.6.7",
+  "packageManager": "pnpm@8.14.1",
   "dependencies": {
-    "node-addon-api": "^7.0.0"
+    "node-addon-api": "^7.1.0"
   },
   "devDependencies": {
-    "@types/node": "^20.4.2",
-    "@types/tmp": "^0.2.3",
-    "@yoursunny/xo-config": "^0.54.0",
-    "execa": "^7.1.1",
+    "@types/node": "^20.11.5",
+    "@types/tmp": "^0.2.6",
+    "@yoursunny/xo-config": "^0.56.2",
+    "execa": "^8.0.1",
     "p-event": "^6.0.0",
     "tmp": "^0.2.1",
-    "typescript": "~5.1.6"
+    "typescript": "~5.3.3"
   }
 }
