@@ -99,9 +99,8 @@ private:
   }
 
   void send(const Napi::CallbackInfo& info) {
-    auto buffer = info[0].As<Napi::ArrayBuffer>();
-    uint32_t offset = info[1].ToNumber();
-    uint32_t length = info[2].ToNumber();
+    auto u8 = info[0].As<Napi::Uint8Array>();
+    size_t length = u8.ByteLength();
 
     if (!m_connected) {
       ++m_nTxDropped;
@@ -116,7 +115,7 @@ private:
       return;
     }
 
-    const uint8_t* data = reinterpret_cast<const uint8_t*>(buffer.Data()) + offset;
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(u8.Data());
     for (uint16_t i = 0; i < nAlloc; ++i) {
       std::copy_n(data, b[i].len, reinterpret_cast<uint8_t*>(b[i].data));
       data += b[i].len;

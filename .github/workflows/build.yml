@@ -4,29 +4,35 @@ on:
   pull_request:
   workflow_dispatch:
 permissions: {}
+env:
+  COREPACK_INTEGRITY_KEYS: 0
 jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 18
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends ninja-build
       - name: Download VPP
         uses: actions/checkout@v4
         with:
           repository: FDio/vpp
-          ref: v23.06
+          ref: v24.06
           path: vpp
       - name: Install libmemif
         run: |
           cd $HOME
           mv $GITHUB_WORKSPACE/vpp $HOME/
           mkdir libmemif-build && cd libmemif-build
-          cmake ../vpp/extras/libmemif
-          make
-          sudo make install
+          cmake -G Ninja ../vpp/extras/libmemif
+          ninja
+          sudo ninja install
           sudo ldconfig
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Build and test
         run: |
           corepack pnpm install
